@@ -79,7 +79,7 @@ public class Command {
         Vec3d target = Vec3d.of(getPosFromArgument(context.getArgument("pos", DefaultPosArgument.class), context.getSource()))
                 .add(0.5d, 0.5d, 0.5d)
                 .subtract(origin.getX(), origin.getY(), origin.getZ())
-                .rotateZ(-direction.asRotation());
+                .rotateY(-direction.asRotation());
 
         double squaredDistance = sqTntRange;
         String configuration = null;
