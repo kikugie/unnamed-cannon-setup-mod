@@ -1,7 +1,7 @@
 package me.kikugie.ucsm;
 
 import com.mojang.brigadier.CommandDispatcher;
-import com.mojang.brigadier.arguments.FloatArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import me.kikugie.ucsm.mixin.DefaultPosArgumentAccessor;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
@@ -14,8 +14,6 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.math.Vec3i;
 import net.minecraft.world.RaycastContext;
-
-import java.io.FileNotFoundException;
 
 import static me.kikugie.ucsm.CannonMod.configs;
 import static me.kikugie.ucsm.CannonMod.points;
@@ -33,7 +31,7 @@ public class Command {
                 .then(literal("reload")
                         .executes(Command::reload))
                 .then(literal("precision")
-                        .then(argument("range", FloatArgumentType.floatArg(0.1f, 9000f))))
+                        .then(argument("range", IntegerArgumentType.integer(1, 9000))))
                 .executes(Command::setTntRange)
                 .then(literal("origin")
                         .executes(Command::originFromPlayerPos)
@@ -53,7 +51,7 @@ public class Command {
     }
 
     private static int setTntRange(CommandContext<FabricClientCommandSource> context) {
-        float range = context.getArgument("range", Float.class);
+        int range = context.getArgument("range", Integer.class);
         sqTntRange = range * range;
         return 1;
     }
@@ -107,24 +105,28 @@ public class Command {
         }
 
         // God forgive me
-        int rotate = switch (direction) {
-            case SOUTH -> 180;
-            case EAST -> 90;
-            case WEST -> -90;
+        double rotate = switch (direction) {
+            case SOUTH -> Math.PI;
+            case EAST -> Math.PI / 2;
+            case WEST -> -Math.PI / 2;
             default -> 0;
         };
 
         Vec3d target = Vec3d.of(pos)
-                .subtract(origin.getX() - 0.5, origin.getY() - 0.5, origin.getZ() - 0.5)
-                .rotateY(rotate);
+                .subtract(origin.getX(), origin.getY(), origin.getZ())
+                .rotateY((float) rotate);
         double requiredDistance = sqTntRange;
         String configuration = null;
 
-        for (int i = 0; i < CannonMod.points.length; i++) {
+        for (int i = 0; i < points.length; i++) {
+            if (points[i].y < target.y) {
+                continue;
+            }
+
             var distance = target.squaredDistanceTo(points[i]);
-            if (distance < requiredDistance) {
-                configuration = configs[i];
+            if (distance <= requiredDistance) {
                 requiredDistance = distance;
+                configuration = configs[i];
             }
         }
 

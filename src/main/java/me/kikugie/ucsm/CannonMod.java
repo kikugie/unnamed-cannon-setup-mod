@@ -6,7 +6,10 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.math.Vec3d;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.logging.Logger;
@@ -15,12 +18,6 @@ public class CannonMod implements ModInitializer {
     public static final Logger LOGGER = Logger.getLogger("ucsm");
     public static Vec3d[] points;
     public static String[] configs;
-    @Override
-    public void onInitialize() {
-        ClientCommandRegistrationCallback.EVENT.register(Command::register);
-        ClientPlayConnectionEvents.JOIN.register(((handler, sender, client) -> initConfig()));
-        initConfig();
-    }
 
     public static boolean initConfig() {
         var configDir = new File(MinecraftClient.getInstance().runDirectory, "config/ucsm/");
@@ -51,5 +48,12 @@ public class CannonMod implements ModInitializer {
         }
 
         return list.toArray(new String[0]);
+    }
+
+    @Override
+    public void onInitialize() {
+        ClientCommandRegistrationCallback.EVENT.register(Command::register);
+        ClientPlayConnectionEvents.JOIN.register(((handler, sender, client) -> initConfig()));
+        initConfig();
     }
 }
