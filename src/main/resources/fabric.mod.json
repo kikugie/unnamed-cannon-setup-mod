@@ -2,19 +2,17 @@
   "schemaVersion": 1,
   "id": "ucsm",
   "version": "${version}",
-
   "name": "Unnamed Cannon Setup Mod",
-  "description": "Command shortcuts for m³'s cannon",
+  "description": "Aim tool for Cubicmetre's cannon",
   "authors": [
-    "KikuGie"
+    "KikuGie",
+    "m³"
   ],
   "contact": {
   },
-
   "license": "MIT",
   "icon": "assets/ucsm/icon.png",
-
-  "environment": "*",
+  "environment": "client",
   "entrypoints": {
     "main": [
       "me.kikugie.ucsm.CannonMod"
@@ -23,10 +21,9 @@
   "mixins": [
     "ucsm.mixins.json"
   ],
-
   "depends": {
     "fabricloader": ">=0.13",
-    "fabric-api": "*",
+    "fabric": "*",
     "minecraft": "~1.19",
     "java": ">=17"
   },

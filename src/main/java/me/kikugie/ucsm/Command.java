@@ -31,8 +31,8 @@ public class Command {
                 .then(literal("reload")
                         .executes(Command::reload))
                 .then(literal("precision")
-                        .then(argument("range", IntegerArgumentType.integer(1, 9000))))
-                .executes(Command::setTntRange)
+                        .then(argument("range", IntegerArgumentType.integer(1, 9000))
+                                .executes(Command::setTntRange)))
                 .then(literal("origin")
                         .executes(Command::originFromPlayerPos)
                         .then(argument("pos", BlockPosArgumentType.blockPos())
@@ -46,13 +46,21 @@ public class Command {
 
 
     private static int help(CommandContext<FabricClientCommandSource> context) {
-        context.getSource().sendFeedback(Text.of("§oAre you in need of help?"));
+        context.getSource().sendFeedback(Text.of("""
+                §oCommand functionality:
+                  - /ucsm reload: reload config files.
+                  - /ucsm precision <int>: maximum distance to the explosion.
+                  - /ucsm origin [<pos> <direction>]: set cannon origin to a location, uses player position and facing direction if no arguments provided.
+                  - /ucsm target [<pos>]: output closest configuration to specified position. Uses block player is looking at (even very far) if no argument is provided."""
+
+        ));
         return 0;
     }
 
     private static int setTntRange(CommandContext<FabricClientCommandSource> context) {
         int range = context.getArgument("range", Integer.class);
         sqTntRange = range * range;
+        context.getSource().sendFeedback(Text.of("§oPrecision set to " + range));
         return 1;
     }
 
@@ -113,16 +121,12 @@ public class Command {
         };
 
         Vec3d target = Vec3d.of(pos)
-                .subtract(origin.getX(), origin.getY(), origin.getZ())
+                .subtract(origin.getX() - 0.5, origin.getY() - 0.5, origin.getZ() - 0.5)
                 .rotateY((float) rotate);
         double requiredDistance = sqTntRange;
         String configuration = null;
 
         for (int i = 0; i < points.length; i++) {
-            if (points[i].y < target.y) {
-                continue;
-            }
-
             var distance = target.squaredDistanceTo(points[i]);
             if (distance <= requiredDistance) {
                 requiredDistance = distance;
