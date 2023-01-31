@@ -15,8 +15,15 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.math.Vec3i;
 import net.minecraft.world.RaycastContext;
 
-import static me.kikugie.ucsm.CannonMod.configs;
-import static me.kikugie.ucsm.CannonMod.points;
+import java.io.*;
+import java.nio.ByteBuffer;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import static me.kikugie.ucsm.CannonMod.*;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.argument;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
 
@@ -41,7 +48,9 @@ public class Command {
                 .then(literal("target")
                         .executes(Command::raycastTarget)
                         .then(argument("pos", BlockPosArgumentType.blockPos())
-                                .executes(Command::posTarget))));
+                                .executes(Command::posTarget)))
+                .then(literal("pack")
+                        .executes(Command::pack)));
     }
 
 
@@ -51,7 +60,8 @@ public class Command {
                   - /ucsm reload: reload config files.
                   - /ucsm precision <int>: maximum distance to the explosion.
                   - /ucsm origin [<pos> <direction>]: set cannon origin to a location, uses player position and facing direction if no arguments provided.
-                  - /ucsm target [<pos>]: output closest configuration to specified position. Uses block player is looking at (even very far) if no argument is provided."""
+                  - /ucsm target [<pos>]: output closest configuration to specified position. Uses block player is looking at (even very far) if no argument is provided.
+                  - /ucsm pack: Packs Ct.txt and Pt.txt into a binary format to reduce file size."""
 
         ));
         return 0;
@@ -103,7 +113,7 @@ public class Command {
     }
 
     private static boolean getTarget(BlockPos pos, FabricClientCommandSource source) {
-        if (points == null || configs == null) {
+        if (kdTree.isEmpty()) {
             source.sendError(Text.of("Config is not loaded!"));
             return false;
         }
@@ -115,30 +125,22 @@ public class Command {
         // God forgive me
         double rotate = switch (direction) {
             case SOUTH -> Math.PI;
-            case EAST -> Math.PI / 2;
-            case WEST -> -Math.PI / 2;
+            case EAST -> Math.PI * 0.5;
+            case WEST -> Math.PI * -0.5;
             default -> 0;
         };
 
         Vec3d target = Vec3d.of(pos)
                 .subtract(origin.getX() - 0.5, origin.getY() - 0.5, origin.getZ() - 0.5)
                 .rotateY((float) rotate);
-        double requiredDistance = sqTntRange;
-        String configuration = null;
 
-        for (int i = 0; i < points.length; i++) {
-            var distance = target.squaredDistanceTo(points[i]);
-            if (distance <= requiredDistance) {
-                requiredDistance = distance;
-                configuration = configs[i];
-            }
-        }
-
-        if (configuration == null) {
+        var result = kdTree.nearestNeighbour(target);
+        if (result == null) {
             source.sendError(Text.of("Your target is too far away!"));
             return false;
         }
-        source.sendFeedback(Text.of(String.format("§aConfiguration: %s; distance: %.2f", configuration, Math.sqrt(requiredDistance))));
+
+        source.sendFeedback(Text.of(String.format("§aConfiguration: %s; distance: %.2f", result.payload, Math.sqrt(result.distance))));
         return true;
     }
 
@@ -165,5 +167,66 @@ public class Command {
                 accessor.getY().toAbsoluteCoordinate(pos.y),
                 accessor.getZ().toAbsoluteCoordinate(pos.z)
         );
+    }
+
+    private static int pack(CommandContext<FabricClientCommandSource> context) {
+        var cFile = new File(configDir, "Ct.txt");
+        var pFile = new File(configDir, "Pt.txt");
+        var packedFile = new File(configDir, "packed.bin");
+
+        try (BufferedReader c = new BufferedReader(new FileReader(cFile));
+             BufferedReader p = new BufferedReader(new FileReader(pFile));
+             FileOutputStream fos = new FileOutputStream(packedFile.getAbsolutePath())) {
+
+            Map<Byte, List<Byte>> map = new HashMap<>();
+            String line;
+
+            while ((line = c.readLine()) != null) {
+                String[] split = line.split(",");
+                byte tnt = Byte.parseByte(split[3]);
+
+                String[] pSplit = p.readLine().split(",");
+                ByteBuffer buffer = ByteBuffer.allocate(24);
+                for (int i = 0; i < 3; ++i) {
+                    buffer.putDouble(i * 8, Double.parseDouble(pSplit[i]));
+                }
+
+                List<Byte> list = Arrays.stream(split).limit(3).map(Byte::parseByte).collect(Collectors.toList());
+                for (byte b : buffer.array()) {
+                    list.add(b);
+                }
+
+                if (map.containsKey(tnt)) {
+                    map.get(tnt).addAll(list);
+                    continue;
+                }
+                map.put(tnt, list);
+            }
+
+            for (Map.Entry<Byte, List<Byte>> entry : map.entrySet()) {
+                Byte k = entry.getKey();
+                List<Byte> v = entry.getValue();
+                byte[] a = new byte[5 + v.size()];
+                a[0] = k;
+                ByteBuffer b = ByteBuffer.allocate(4);
+                b.putInt(v.size());
+                for (int i = 0; i < 4; ++i) {
+                    a[i + 1] = b.get(i);
+                }
+
+                for (int i = 0; i < v.size(); ++i) {
+                    a[i + 5] = v.get(i);
+                }
+                fos.write(a);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            return 1;
+        }
+
+        var originalSize = cFile.length() + pFile.length();
+        context.getSource().sendFeedback(Text.of(String.format("§oPacked successfully! Packed size: %d bytes (%.2f%% of original size)", packedFile.length(), packedFile.length() * 100D / originalSize)));
+
+        return 1;
     }
 }
