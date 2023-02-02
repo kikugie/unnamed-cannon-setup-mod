@@ -3,6 +3,7 @@ package me.kikugie.ucsm;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
+import jk.tree.KDTree;
 import me.kikugie.ucsm.mixin.DefaultPosArgumentAccessor;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.command.CommandRegistryAccess;
@@ -22,15 +23,18 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.zip.GZIPOutputStream;
 
-import static me.kikugie.ucsm.CannonMod.*;
+import static me.kikugie.ucsm.CannonMod.configDir;
+import static me.kikugie.ucsm.CannonMod.kdTree;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.argument;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
 
 public class Command {
-    private static float sqTntRange = 400f;
+    private static int distanceLimit = 20;
     private static Vec3i origin = null;
     private static Direction direction = null;
+    private static boolean mirrored = false;
 
     public static void register(CommandDispatcher<FabricClientCommandSource> dispatcher, CommandRegistryAccess ignoredAccess) {
         dispatcher.register(literal("ucsm")
@@ -41,10 +45,14 @@ public class Command {
                         .then(argument("range", IntegerArgumentType.integer(1, 9000))
                                 .executes(Command::setTntRange)))
                 .then(literal("origin")
-                        .executes(Command::originFromPlayerPos)
+                        .executes(context -> originFromPlayerPos(context, false))
+                        .then(literal("mirrored")
+                                .executes(context -> originFromPlayerPos(context, true)))
                         .then(argument("pos", BlockPosArgumentType.blockPos())
                                 .then(argument("direction", new DirectionArgumentType())
-                                        .executes(Command::setOrigin))))
+                                        .executes(context -> originFromPos(context, false))
+                                        .then(literal("mirrored")
+                                                .executes(context -> originFromPos(context, true))))))
                 .then(literal("target")
                         .executes(Command::raycastTarget)
                         .then(argument("pos", BlockPosArgumentType.blockPos())
@@ -59,7 +67,7 @@ public class Command {
                 §oCommand functionality:
                   - /ucsm reload: reload config files.
                   - /ucsm precision <int>: maximum distance to the explosion.
-                  - /ucsm origin [<pos> <direction>]: set cannon origin to a location, uses player position and facing direction if no arguments provided.
+                  - /ucsm origin [<pos> <direction>] [mirrored]: set cannon origin to a location, uses player position and facing direction if no arguments provided.
                   - /ucsm target [<pos>]: output closest configuration to specified position. Uses block player is looking at (even very far) if no argument is provided.
                   - /ucsm pack: Packs Ct.txt and Pt.txt into a binary format to reduce file size."""
 
@@ -68,15 +76,15 @@ public class Command {
     }
 
     private static int setTntRange(CommandContext<FabricClientCommandSource> context) {
-        int range = context.getArgument("range", Integer.class);
-        sqTntRange = range * range;
-        context.getSource().sendFeedback(Text.of("§oPrecision set to " + range));
+        distanceLimit = context.getArgument("range", Integer.class);
+        context.getSource().sendFeedback(Text.of("§oPrecision set to " + distanceLimit));
         return 1;
     }
 
     private static int reload(CommandContext<FabricClientCommandSource> context) {
         origin = null;
         direction = null;
+        mirrored = false;
         if (CannonMod.initConfig()) {
             context.getSource().sendFeedback(Text.of("§oConfig reloaded!"));
             return 1;
@@ -91,12 +99,13 @@ public class Command {
         BlockPos result = player.world.raycast(
                 new RaycastContext(
                         player.getEyePos(),
-                        player.getEyePos().
-                                add(player.getRotationVecClient().
-                                        multiply(1000f)),
+                        player.getEyePos()
+                                .add(player.getRotationVecClient()
+                                        .multiply(1000f)),
                         RaycastContext.ShapeType.OUTLINE,
                         RaycastContext.FluidHandling.ANY,
-                        player)
+                        player
+                )
         ).getBlockPos();
 
         if (result.getSquaredDistance(player.getEyePos()) >= 990 * 990) {
@@ -121,42 +130,50 @@ public class Command {
             source.sendError(Text.of("Origin is not set up!"));
             return false;
         }
-
-        // God forgive me
-        double rotate = switch (direction) {
-            case SOUTH -> Math.PI;
-            case EAST -> Math.PI * 0.5;
-            case WEST -> Math.PI * -0.5;
-            default -> 0;
-        };
-
         Vec3d target = Vec3d.of(pos)
-                .subtract(origin.getX() - 0.5, origin.getY() - 0.5, origin.getZ() - 0.5)
-                .rotateY((float) rotate);
+                .subtract(origin.getX() - 0.5, origin.getY() - 0.5, origin.getZ() - 0.5) // Aim at the center of the block
+                .rotateY((float) Math.toRadians(direction.asRotation() + 180));
+        if (mirrored) {
+            target = new Vec3d(-target.x, target.y, target.z);
+        }
 
-        var result = kdTree.nearestNeighbour(target);
-        if (result == null) {
+        KDTree.SearchResult<String> result = kdTree.nearestNeighbour(target);
+        if (result.distance > distanceLimit) {
             source.sendError(Text.of("Your target is too far away!"));
             return false;
         }
 
-        source.sendFeedback(Text.of(String.format("§aConfiguration: %s; distance: %.2f", result.payload, Math.sqrt(result.distance))));
+        source.sendFeedback(
+                Text.of(String.format("§aConfiguration: %s; distance: %.2f", result.payload, Math.sqrt(result.distance))));
         return true;
     }
 
-    private static int setOrigin(CommandContext<FabricClientCommandSource> context) {
-        origin = getPosFromArgument(context.getArgument("pos", DefaultPosArgument.class), context.getSource());
-        direction = Direction.byName(context.getArgument("direction", String.class));
-        context.getSource().sendFeedback(Text.of("§oOrigin set to " + origin.toShortString() + " facing " + direction.asString()));
+    private static int originFromPos(CommandContext<FabricClientCommandSource> context, boolean mirror) {
+        setOrigin(
+                context,
+                getPosFromArgument(context.getArgument("pos", DefaultPosArgument.class), context.getSource()),
+                Direction.byName(context.getArgument("direction", String.class)),
+                mirror
+        );
         return 1;
     }
 
-    private static int originFromPlayerPos(CommandContext<FabricClientCommandSource> context) {
+    private static int originFromPlayerPos(CommandContext<FabricClientCommandSource> context, boolean mirror) {
         final var player = context.getSource().getPlayer();
-        origin = player.getBlockPos();
-        direction = player.getHorizontalFacing();
-        context.getSource().sendFeedback(Text.of("§oOrigin set to " + origin.toShortString() + " facing " + direction.asString()));
+        setOrigin(context, player.getBlockPos(), player.getHorizontalFacing(), mirror);
         return 1;
+    }
+
+    private static void setOrigin(CommandContext<FabricClientCommandSource> context, Vec3i pos, Direction dir, boolean mirror) {
+        origin = pos;
+        direction = dir;
+        mirrored = mirror;
+        String output = "§oOrigin set to " + origin.toShortString() + " facing " + direction.asString();
+        if (mirror) {
+            context.getSource().sendFeedback(Text.of(output + " (mirrored)"));
+            return;
+        }
+        context.getSource().sendFeedback(Text.of(output));
     }
 
     private static BlockPos getPosFromArgument(DefaultPosArgument argument, FabricClientCommandSource source) {
@@ -170,62 +187,72 @@ public class Command {
     }
 
     private static int pack(CommandContext<FabricClientCommandSource> context) {
-        var cFile = new File(configDir, "Ct.txt");
-        var pFile = new File(configDir, "Pt.txt");
+        var configFile = new File(configDir, "Ct.txt");
+        var pointsFile = new File(configDir, "Pt.txt");
         var packedFile = new File(configDir, "packed.bin");
+        if (packedFile.exists() && !configFile.exists() && !pointsFile.exists()) {
+            context.getSource().sendError(Text.of("Packed file already exists, nothing to repack."));
+            return 0;
+        }
+        if (!configFile.exists() || !pointsFile.exists()) {
+            context.getSource().sendError(Text.of("Missing files for packing!"));
+            return 0;
+        }
 
-        try (BufferedReader c = new BufferedReader(new FileReader(cFile));
-             BufferedReader p = new BufferedReader(new FileReader(pFile));
-             FileOutputStream fos = new FileOutputStream(packedFile.getAbsolutePath())) {
+        try (BufferedReader configReader = new BufferedReader(new FileReader(configFile));
+             BufferedReader pointsReader = new BufferedReader(new FileReader(pointsFile));
+             GZIPOutputStream gzipOutputStream = new GZIPOutputStream(new FileOutputStream(packedFile.getAbsolutePath()))) {
 
-            Map<Byte, List<Byte>> map = new HashMap<>();
+            Map<Byte, List<Byte>> readBytes = new HashMap<>();
             String line;
 
-            while ((line = c.readLine()) != null) {
-                String[] split = line.split(",");
-                byte tnt = Byte.parseByte(split[3]);
+            while ((line = configReader.readLine()) != null) {
+                String[] splitConfig = line.split(",");
+                byte tnt = Byte.parseByte(splitConfig[3]);
 
-                String[] pSplit = p.readLine().split(",");
+                String[] splitPoints = pointsReader.readLine().split(",");
                 ByteBuffer buffer = ByteBuffer.allocate(24);
                 for (int i = 0; i < 3; ++i) {
-                    buffer.putDouble(i * 8, Double.parseDouble(pSplit[i]));
+                    buffer.putDouble(i * 8, Double.parseDouble(splitPoints[i]));
                 }
 
-                List<Byte> list = Arrays.stream(split).limit(3).map(Byte::parseByte).collect(Collectors.toList());
+                List<Byte> list = Arrays.stream(splitConfig).limit(3).map(Byte::parseByte).collect(Collectors.toList());
                 for (byte b : buffer.array()) {
                     list.add(b);
                 }
 
-                if (map.containsKey(tnt)) {
-                    map.get(tnt).addAll(list);
+                if (readBytes.containsKey(tnt)) {
+                    readBytes.get(tnt).addAll(list);
                     continue;
                 }
-                map.put(tnt, list);
+                readBytes.put(tnt, list);
             }
 
-            for (Map.Entry<Byte, List<Byte>> entry : map.entrySet()) {
-                Byte k = entry.getKey();
-                List<Byte> v = entry.getValue();
-                byte[] a = new byte[5 + v.size()];
-                a[0] = k;
-                ByteBuffer b = ByteBuffer.allocate(4);
-                b.putInt(v.size());
+            for (Map.Entry<Byte, List<Byte>> entry : readBytes.entrySet()) {
+                Byte entryKey = entry.getKey();
+                List<Byte> entryValue = entry.getValue();
+                byte[] encodedBytes = new byte[5 + entryValue.size()];
+                encodedBytes[0] = entryKey;
+                ByteBuffer byteBuffer = ByteBuffer.allocate(4);
+                byteBuffer.putInt(entryValue.size());
                 for (int i = 0; i < 4; ++i) {
-                    a[i + 1] = b.get(i);
+                    encodedBytes[i + 1] = byteBuffer.get(i);
                 }
 
-                for (int i = 0; i < v.size(); ++i) {
-                    a[i + 5] = v.get(i);
+                for (int i = 0; i < entryValue.size(); ++i) {
+                    encodedBytes[i + 5] = entryValue.get(i);
                 }
-                fos.write(a);
+                gzipOutputStream.write(encodedBytes);
+                configFile.deleteOnExit();
+                pointsFile.deleteOnExit();
             }
         } catch (IOException e) {
             e.printStackTrace();
             return 1;
         }
 
-        var originalSize = cFile.length() + pFile.length();
-        context.getSource().sendFeedback(Text.of(String.format("§oPacked successfully! Packed size: %d bytes (%.2f%% of original size)", packedFile.length(), packedFile.length() * 100D / originalSize)));
+        var originalSize = configFile.length() + pointsFile.length();
+        context.getSource().sendFeedback(Text.of(String.format("§oPacked successfully! Packed size: %d bytes (%.2f%% of original size).\nOld files will be deleted on game exit.", packedFile.length(), packedFile.length() * 100D / originalSize)));
 
         return 1;
     }

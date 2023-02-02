@@ -30,9 +30,9 @@ public class DirectionArgumentType implements ArgumentType<String> {
 
     @Override
     public String parse(StringReader reader) throws CommandSyntaxException {
-        String remainder = reader.getRemaining().trim().toLowerCase();
+        String remainder = reader.readUnquotedString();
         if (dirStrings.contains(remainder)) {
-            return reader.readString();
+            return remainder;
         }
         throw UNEXPECTED_VALUE_EXCEPTION.create(remainder);
     }

@@ -5,22 +5,19 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.math.Vec3d;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
+import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.file.Files;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.logging.Logger;
+import java.util.zip.GZIPInputStream;
 
 public class CannonMod implements ModInitializer {
     public static final Logger LOGGER = Logger.getLogger("ucsm");
-    public static KDTree<String> kdTree;
     public static final File configDir = new File(MinecraftClient.getInstance().runDirectory, "config/ucsm/");
+    public static KDTree<String> kdTree;
 
     public static boolean initConfig() {
         if (!configDir.exists()) {
@@ -29,17 +26,17 @@ public class CannonMod implements ModInitializer {
 
         try {
             kdTree = new KDTree<>();
-            var packed = new File(configDir, "packed.bin");
+            File packed = new File(configDir, "packed.bin");
 
             if (packed.exists() && packed.canRead()) {
-                var bytes = Files.readAllBytes(new File(configDir, "packed.bin").toPath());
-                var idx = 0;
+                byte[] bytes = new GZIPInputStream(new FileInputStream(packed)).readAllBytes();
+                int idx = 0;
 
                 // Binary format:
                 // [propellant{1}number_of_ps{4}[x{8}y{8}z{8}first{1}second{1}third{1}]+]*
                 while (idx < bytes.length) {
                     // propellant{1}
-                    var tnt = bytes[idx++];
+                    byte tnt = bytes[idx++];
 
                     // number_of_ps{4}
                     byte[] lenBytes = new byte[4];
@@ -64,17 +61,17 @@ public class CannonMod implements ModInitializer {
                         System.arraycopy(chunk, 19, zBytes, 0, 8);
                         double z = ByteBuffer.wrap(zBytes).order(ByteOrder.BIG_ENDIAN).getDouble();
 
-                        kdTree.addPoint(new double[] { x, y, z }, chunk[0] + "," + chunk[1] + "," + chunk[2] + "," + tnt);
+                        kdTree.addPoint(new double[]{x, y, z}, chunk[0] + "," + chunk[1] + "," + chunk[2] + "," + tnt);
                     }
 
                     idx += len;
                 }
             } else {
-                var points = Arrays.stream(readList(new File(configDir, "Pt.txt"))).map(val -> {
+                double[][] points = Arrays.stream(readList(new File(configDir, "Pt.txt"))).map(val -> {
                     var k = val.split(",");
-                    return new double[] { Float.parseFloat(k[0]), Float.parseFloat(k[1]), Float.parseFloat(k[2]) };
+                    return new double[]{Float.parseFloat(k[0]), Float.parseFloat(k[1]), Float.parseFloat(k[2])};
                 }).toArray(double[][]::new);
-                var configs = readList(new File(configDir, "Ct.txt"));
+                String[] configs = readList(new File(configDir, "Ct.txt"));
 
                 for (int i = 0, lim = points.length; i < lim; i++) {
                     kdTree.addPoint(points[i], configs[i]);
