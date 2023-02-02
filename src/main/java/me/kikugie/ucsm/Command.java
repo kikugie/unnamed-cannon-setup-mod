@@ -69,7 +69,7 @@ public class Command {
                   - /ucsm precision <int>: maximum distance to the explosion.
                   - /ucsm origin [<pos> <direction>] [mirrored]: set cannon origin to a location, uses player position and facing direction if no arguments provided.
                   - /ucsm target [<pos>]: output closest configuration to specified position. Uses block player is looking at (even very far) if no argument is provided.
-                  - /ucsm pack: Packs Ct.txt and Pt.txt into a binary format to reduce file size."""
+                  - /ucsm pack: pack Ct.txt and Pt.txt into a binary format to reduce file size."""
 
         ));
         return 0;
