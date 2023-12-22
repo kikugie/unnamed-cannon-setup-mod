@@ -1,6 +1,7 @@
 package dev.kikugie.ucsm.cannon
 
 import com.mojang.brigadier.exceptions.DynamicCommandExceptionType
+import dev.kikugie.ucsm.UCSM
 import it.unimi.dsi.fastutil.objects.Object2ObjectAVLTreeMap
 import jk.tree.KDTree
 import net.minecraft.client.MinecraftClient
@@ -8,13 +9,11 @@ import net.minecraft.text.Text
 import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.Direction
 import net.minecraft.util.math.Vec3i
-import java.io.FileNotFoundException
 import java.nio.file.Path
 import kotlin.io.path.notExists
 import kotlin.io.path.readLines
-import kotlin.jvm.Throws
 
-class CannonInstance(vals: Sequence<Pair<String, String>>) {
+class CannonInstance(val file: Path, vals: Sequence<Pair<String, String>>) {
     val tree = KDTree<String>()
     val extras = Object2ObjectAVLTreeMap<String, String>()
 
@@ -47,7 +46,7 @@ class CannonInstance(vals: Sequence<Pair<String, String>>) {
     companion object {
         val coords = Regex("\\d+,\\d+,\\d+")
         val LOAD_ERROR = DynamicCommandExceptionType { file -> Text.of("File not found: $file") }
-        @Throws(FileNotFoundException::class)
+
         fun loadDir(dir: Path): CannonInstance {
             val root = MinecraftClient.getInstance().runDirectory.toPath()
             val ct = dir.resolve("Ct.txt").also {
@@ -56,7 +55,13 @@ class CannonInstance(vals: Sequence<Pair<String, String>>) {
             val pt = dir.resolve("Pt.txt").also {
                 if (it.notExists()) throw LOAD_ERROR.create(root.relativize(it))
             }
-            return CannonInstance(pt.readLines().asSequence().zip(ct.readLines().asSequence()))
+            return CannonInstance(dir, pt.readLines().asSequence().zip(ct.readLines().asSequence())).also {
+                UCSM.cannonCache[dir] = it
+            }
+        }
+
+        fun lazyLoad(dir: Path): CannonInstance {
+            return UCSM.cannonCache[dir] ?: loadDir(dir)
         }
     }
 }

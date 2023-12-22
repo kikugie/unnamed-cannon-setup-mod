@@ -2,7 +2,6 @@ package dev.kikugie.ucsm.command
 
 import com.mojang.brigadier.CommandDispatcher
 import com.mojang.brigadier.arguments.IntegerArgumentType
-import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType
 import dev.kikugie.ucsm.UCSM
@@ -26,13 +25,15 @@ import kotlin.io.path.name
 
 object ModCommand {
     var precision = 10
-    val NO_INSTANCE = SimpleCommandExceptionType(Text.of("Load an instance `/ucsm load` first"))
+    val NO_INSTANCE = SimpleCommandExceptionType(Text.of("Load an instance with `/ucsm load` first"))
     val NO_ORIGIN = SimpleCommandExceptionType(Text.of("Set the origin with `/ucsm origin` first"))
 
     fun register(dispatcher: CommandDispatcher<FabricClientCommandSource>, ignoredAccess: CommandRegistryAccess) {
         dispatcher.register(
             literal("ucsm")
                 .executes(::help)
+                .then(literal("help").executes(::help))
+                .then(literal("reload").executes(::reload))
                 .then(
                     literal("load").then(
                         argument("dir", DirectoryArgumentType(UCSM.CONFIG))
@@ -81,10 +82,8 @@ object ModCommand {
 
     private fun configTarget(context: CommandContext<FabricClientCommandSource>): Int {
         checkInstance()
-        checkCannon()
-
         val config = context.getArgument("config", String::class.java)
-        context.source.sendFeedback(Text.of("§aConfiguration: $config"))
+        context.source.sendFeedback(Text.of("§aConfiguration: ${UCSM.cannon!!.extras[config]}"))
         return 0
     }
 
@@ -170,13 +169,29 @@ object ModCommand {
 
     private fun load(context: CommandContext<FabricClientCommandSource>): Int {
         val dir = context.getArgument("dir", Path::class.java)
-        UCSM.cannon = CannonInstance.loadDir(dir)
+        UCSM.cannon = CannonInstance.lazyLoad(dir)
         context.source.sendFeedback(Text.of("§oLoaded cannon ${dir.name}"))
         return 0
     }
 
-    private fun help(context: CommandContext<FabricClientCommandSource>): Int {
+    private fun reload(context: CommandContext<FabricClientCommandSource>): Int {
+        checkInstance()
+        val dir = UCSM.cannon!!.file
+        UCSM.cannon = CannonInstance.loadDir(dir)
+        context.source.sendFeedback(Text.of("§oReloaded cannon ${dir.name}"))
+        return 0
+    }
 
+    private fun help(context: CommandContext<FabricClientCommandSource>): Int {
+        context.source.sendFeedback(Text.of("""
+            §oCommand functionality:
+            - load <dir>: Load cannon config from .minecraft/config/ucsm/{dir}. Cannon origins are preserved when switching.
+            - reload: Reload files for the current cannon. Origin is reset.
+            - precision: Set the maximum valid distance from tnt to the target
+            - origin [<pos> <direction>] [mirrored]: Set cannon origin to a location. If empty, uses player position and rotation.
+            - target <conf>: If the active cannon has custom presets, finds the matching one. Doesn't require an origin to be set up.
+            - target [<pos>]: Find the closest configuration to the given position. If empty, finds the block the player is looking at.
+        """.trimIndent()))
         return 0
     }
 
