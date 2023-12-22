@@ -14,19 +14,21 @@
   "icon": "assets/ucsm/icon.png",
   "environment": "client",
   "entrypoints": {
-    "main": [
-      "me.kikugie.ucsm.CannonMod"
+    "client": [
+      {
+        "adapter": "kotlin",
+        "value": "dev.kikugie.ucsm.UCSM"
+      }
     ]
   },
   "mixins": [
     "ucsm.mixins.json"
   ],
   "depends": {
-    "fabricloader": ">=0.13",
-    "fabric": "*",
-    "minecraft": "~1.19",
-    "java": ">=17"
-  },
-  "suggests": {
+    "fabricloader": ">=0.14",
+    "fabric-api": "*",
+    "minecraft": ">=1.19",
+    "java": ">=17",
+    "fabric-language-kotlin": ">=${flk}"
   }
 }
