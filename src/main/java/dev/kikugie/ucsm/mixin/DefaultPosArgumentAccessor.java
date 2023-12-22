@@ -1,4 +1,4 @@
-package me.kikugie.ucsm.mixin;
+package dev.kikugie.ucsm.mixin;
 
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
