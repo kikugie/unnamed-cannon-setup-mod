@@ -30,7 +30,7 @@ class CannonInstance(val file: Path, vals: Sequence<Pair<String, String>>) {
     }
 
     private fun addTree(pt: String, ct: String) {
-        val (x, y, z) = pt.split(',', limit = 2)
+        val (x, y, z) = pt.split(',', limit = 3)
         try {
             tree.addPoint(doubleArrayOf(x.toDouble(), y.toDouble(), z.toDouble()), ct)
         } catch (ignored: Exception) {
@@ -44,7 +44,7 @@ class CannonInstance(val file: Path, vals: Sequence<Pair<String, String>>) {
     }
 
     companion object {
-        val coords = Regex("\\d+,\\d+,\\d+")
+        val coords = Regex("(-?\\d+\\.\\d+),(-?\\d+\\.\\d+),(-?\\d+\\.\\d+)")
         val LOAD_ERROR = DynamicCommandExceptionType { file -> Text.of("File not found: $file") }
 
         fun loadDir(dir: Path): CannonInstance {
