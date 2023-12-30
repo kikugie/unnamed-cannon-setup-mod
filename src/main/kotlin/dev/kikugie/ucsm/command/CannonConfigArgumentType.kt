@@ -14,7 +14,7 @@ import java.util.concurrent.CompletableFuture
 class CannonConfigArgumentType : ArgumentType<String> {
     val INVALID_CONFIG = SimpleCommandExceptionType(Text.of("Invalid cannon config"))
     val configs: Collection<String>?
-        get() = UCSM.cannon?.extras?.keys
+        get() = UCSM.cannon?.getExtrasSafe()?.keys
 
     override fun parse(reader: StringReader): String {
         val remainder = reader.readUnquotedString()
