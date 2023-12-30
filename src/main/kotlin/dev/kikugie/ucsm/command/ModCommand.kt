@@ -156,7 +156,7 @@ object ModCommand {
         mirrored: Boolean
     ): Int {
         checkInstance()
-        UCSM.cannon!!.setProperites(pos, facing, mirrored)
+        UCSM.cannon!!.setProperties(pos, facing, mirrored)
         context.source.sendFeedback(Text.of("§oOrigin set to ${pos.toShortString()} facing ${facing.asString()}"))
         return 0;
     }

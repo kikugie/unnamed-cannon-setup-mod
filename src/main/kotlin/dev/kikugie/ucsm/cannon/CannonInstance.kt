@@ -23,28 +23,28 @@ class CannonInstance(val file: Path, vals: Sequence<Pair<String, String>>) {
 
     init {
         vals.forEach { (pt, ct) ->
-            if (coords.matchEntire(pt) != null)
-                addTree(pt, ct)
-            else extras[pt] = ct
+            if (addTree(pt, ct)) extras[pt] = ct
         }
     }
 
-    private fun addTree(pt: String, ct: String) {
-        val (x, y, z) = pt.split(',', limit = 3)
-        try {
+    private fun addTree(pt: String, ct: String): Boolean {
+        return try {
+            val (x, y, z) = pt.split(',')
+                .takeIf { it.size == 3 } ?: return false
             tree.addPoint(doubleArrayOf(x.toDouble(), y.toDouble(), z.toDouble()), ct)
+            false
         } catch (ignored: Exception) {
+            true
         }
     }
 
-    fun setProperites(pos: BlockPos, facing: Direction, mirror: Boolean) {
+    fun setProperties(pos: BlockPos, facing: Direction, mirror: Boolean) {
         origin = pos
         direction = facing
         mirrored = mirror
     }
 
     companion object {
-        val coords = Regex("(-?\\d+\\.\\d+),(-?\\d+\\.\\d+),(-?\\d+\\.\\d+)")
         val LOAD_ERROR = DynamicCommandExceptionType { file -> Text.of("File not found: $file") }
 
         fun loadDir(dir: Path): CannonInstance {
