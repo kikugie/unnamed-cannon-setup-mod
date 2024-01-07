@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory
 import java.nio.file.Path
 
 object UCSM : ClientModInitializer {
-    val LOGGER = LoggerFactory.getLogger("ECSM")
+    val LOGGER = LoggerFactory.getLogger("UCSM")
     val CONFIG = FabricLoader.getInstance().configDir.resolve("ucsm")
     val cannonCache = mutableMapOf<Path, CannonInstance>()
     var cannon: CannonInstance? = null

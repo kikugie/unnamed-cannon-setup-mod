@@ -34,6 +34,7 @@ object ModCommand {
                 .executes(::help)
                 .then(literal("help").executes(::help))
                 .then(literal("reload").executes(::reload))
+                .then(literal("unload").executes(::unload))
                 .then(
                     literal("load").then(
                         argument("dir", DirectoryArgumentType(UCSM.CONFIG))
@@ -80,16 +81,32 @@ object ModCommand {
         )
     }
 
+    private fun unload(context: CommandContext<FabricClientCommandSource>): Int {
+        checkInstance()
+        UCSM.cannon!!.also {
+            it.unload()
+            UCSM.cannonCache.remove(it.file)
+            context.source.sendFeedback(Text.of("§aUnloaded cannon ${it.file.name}"))
+        }
+        return 0
+    }
+
     private fun configTarget(context: CommandContext<FabricClientCommandSource>): Int {
         checkInstance()
         val config = context.getArgument("config", String::class.java)
-        context.source.sendFeedback(Text.of("§aConfiguration: ${UCSM.cannon!!.extras[config]}"))
+        val result = UCSM.cannon?.getExtra(config) ?: return -1
+        context.source.sendFeedback(Text.of("§aConfiguration: $result"))
         return 0
     }
 
     private fun posTarget(context: CommandContext<FabricClientCommandSource>): Int =
-        context.source.let { setTarget(getPosFromArgument(
-            context.getArgument("pos", DefaultPosArgument::class.java), it), it) }
+        context.source.let {
+            setTarget(
+                getPosFromArgument(
+                    context.getArgument("pos", DefaultPosArgument::class.java), it
+                ), it
+            )
+        }
 
     private fun raycastTarget(context: CommandContext<FabricClientCommandSource>): Int {
         val source = context.source
@@ -126,7 +143,7 @@ object ModCommand {
             target = Vec3d(-target.x, target.y, target.z)
         }
 
-        val result = cannon.tree.nearestNeighbour(target)
+        val result = cannon.getCoord(target) ?: return -1
         return if (result.distance > precision) {
             source.sendError(Text.of("Your target is too far away!"))
             -1
@@ -137,7 +154,8 @@ object ModCommand {
     }
 
     private fun originFromPos(context: CommandContext<FabricClientCommandSource>, mirrored: Boolean): Int =
-        setOrigin(context,
+        setOrigin(
+            context,
             getPosFromArgument(
                 context.getArgument("pos", DefaultPosArgument::class.java),
                 context.source
@@ -156,9 +174,9 @@ object ModCommand {
         mirrored: Boolean
     ): Int {
         checkInstance()
-        UCSM.cannon!!.setProperites(pos, facing, mirrored)
+        UCSM.cannon!!.setProperties(pos, facing, mirrored)
         context.source.sendFeedback(Text.of("§oOrigin set to ${pos.toShortString()} facing ${facing.asString()}"))
-        return 0;
+        return 0
     }
 
     private fun tntRange(context: CommandContext<FabricClientCommandSource>): Int {
@@ -170,36 +188,41 @@ object ModCommand {
     private fun load(context: CommandContext<FabricClientCommandSource>): Int {
         val dir = context.getArgument("dir", Path::class.java)
         UCSM.cannon = CannonInstance.lazyLoad(dir)
-        context.source.sendFeedback(Text.of("§oLoaded cannon ${dir.name}"))
+        context.source.sendFeedback(Text.of("§oLoading cannon ${dir.name}"))
         return 0
     }
 
     private fun reload(context: CommandContext<FabricClientCommandSource>): Int {
         checkInstance()
         val dir = UCSM.cannon!!.file
-        UCSM.cannon = CannonInstance.loadDir(dir)
-        context.source.sendFeedback(Text.of("§oReloaded cannon ${dir.name}"))
+        UCSM.cannon!!.reload()
+        context.source.sendFeedback(Text.of("§oReloading cannon ${dir.name}"))
         return 0
     }
 
     private fun help(context: CommandContext<FabricClientCommandSource>): Int {
-        context.source.sendFeedback(Text.of("""
+        context.source.sendFeedback(
+            Text.of(
+                """
             §oCommand functionality:
             - load <dir>: Load cannon config from .minecraft/config/ucsm/{dir}. Cannon origins are preserved when switching.
-            - reload: Reload files for the current cannon. Origin is reset.
+            - reload: Reload files for the current cannon.
+            - unload: Unloads the current cannon entirely.
             - precision: Set the maximum valid distance from tnt to the target
             - origin [<pos> <direction>] [mirrored]: Set cannon origin to a location. If empty, uses player position and rotation.
             - target <conf>: If the active cannon has custom presets, finds the matching one. Doesn't require an origin to be set up.
             - target [<pos>]: Find the closest configuration to the given position. If empty, finds the block the player is looking at.
-        """.trimIndent()))
+        """.trimIndent()
+            )
+        )
         return 0
     }
 
-    fun checkInstance() {
+    private fun checkInstance() {
         if (UCSM.cannon == null) throw NO_INSTANCE.create()
     }
 
-    fun checkCannon() {
+    private fun checkCannon() {
         if (UCSM.cannon!!.origin == null) throw NO_ORIGIN.create()
     }
 
